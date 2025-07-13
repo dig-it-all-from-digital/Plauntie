@@ -254,7 +254,30 @@ async def get_plant_care_info(plant_id: str):
     care_info = await plant_service.get_plant_care_info_perenual(plant_id)
     
     if not care_info:
-        raise HTTPException(status_code=404, detail="Plant care information not found")
+        # Fallback: try to get basic info from search results
+        search_results = await plant_service.search_plants_perenual("id:" + plant_id)
+        if search_results:
+            plant = search_results[0]
+            care_info = PlantCareInfo(
+                plant_id=plant_id,
+                name=plant.name,
+                scientific_name=plant.scientific_name,
+                watering="Регулярный полив по мере высыхания почвы",
+                sunlight="Яркий рассеянный свет",
+                temperature="18-24°C",
+                humidity="Умеренная влажность 40-60%",
+                fertilizer="Подкормка раз в 2-4 недели в период роста",
+                repotting="Пересадка каждые 1-2 года весной",
+                common_problems=["Переувлажнение", "Недостаток света", "Вредители"],
+                care_tips=[
+                    "Проверяйте влажность почвы перед поливом",
+                    "Обеспечьте хорошее освещение",
+                    "Регулярно осматривайте растение на предмет вредителей",
+                    "Поддерживайте стабильную температуру"
+                ]
+            )
+        else:
+            raise HTTPException(status_code=404, detail="Plant care information not found")
     
     return care_info
 
