@@ -104,6 +104,70 @@ class PlantDiagnosis(BaseModel):
 class PlantAPIService:
     def __init__(self):
         self.session = None
+        # Russian to English plant name translations
+        self.plant_translations = {
+            'роза': 'rose',
+            'розы': 'rose',
+            'фиалка': 'violet',
+            'фиалки': 'violet',
+            'кактус': 'cactus',
+            'кактусы': 'cactus',
+            'фикус': 'ficus',
+            'фикусы': 'ficus',
+            'орхидея': 'orchid',
+            'орхидеи': 'orchid',
+            'тюльпан': 'tulip',
+            'тюльпаны': 'tulip',
+            'лилия': 'lily',
+            'лилии': 'lily',
+            'ромашка': 'daisy',
+            'ромашки': 'daisy',
+            'подсолнух': 'sunflower',
+            'подсолнухи': 'sunflower',
+            'пион': 'peony',
+            'пионы': 'peony',
+            'лаванда': 'lavender',
+            'мята': 'mint',
+            'базилик': 'basil',
+            'петрушка': 'parsley',
+            'укроп': 'dill',
+            'алоэ': 'aloe',
+            'каланхоэ': 'kalanchoe',
+            'герань': 'geranium',
+            'бегония': 'begonia',
+            'драцена': 'dracaena',
+            'пальма': 'palm',
+            'плющ': 'ivy',
+            'папоротник': 'fern',
+            'мох': 'moss',
+            'суккулент': 'succulent',
+            'суккуленты': 'succulent',
+            'денежное дерево': 'jade plant',
+            'фиалка узамбарская': 'african violet',
+            'комнатная роза': 'indoor rose',
+            'цветок': 'flower',
+            'цветы': 'flower',
+            'растение': 'plant',
+            'растения': 'plant',
+            'трава': 'grass',
+            'дерево': 'tree',
+            'куст': 'bush'
+        }
+    
+    def translate_query(self, query: str) -> str:
+        """Translate Russian plant names to English"""
+        query_lower = query.lower().strip()
+        
+        # Direct translation
+        if query_lower in self.plant_translations:
+            return self.plant_translations[query_lower]
+        
+        # Partial match
+        for russian, english in self.plant_translations.items():
+            if russian in query_lower or query_lower in russian:
+                return english
+        
+        return query  # Return original if no translation found
     
     async def get_session(self):
         if self.session is None:
@@ -117,10 +181,15 @@ class PlantAPIService:
     async def search_plants_perenual(self, query: str) -> List[PlantSearchResult]:
         """Search plants using Perenual API"""
         session = await self.get_session()
+        
+        # Translate Russian to English if needed
+        translated_query = self.translate_query(query)
+        logging.info(f"Original query: '{query}' -> Translated: '{translated_query}'")
+        
         url = f"https://perenual.com/api/species-list"
         params = {
             'key': PERENUAL_API_KEY,
-            'q': query,
+            'q': translated_query,
             'page': 1
         }
         
@@ -142,7 +211,10 @@ class PlantAPIService:
                         )
                         results.append(result)
                     
+                    logging.info(f"Found {len(results)} plants for query '{translated_query}'")
                     return results
+                else:
+                    logging.error(f"Perenual API returned status {response.status}")
         except Exception as e:
             logging.error(f"Error searching Perenual: {e}")
         
