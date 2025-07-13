@@ -309,7 +309,7 @@ plant_service = PlantAPIService()
 # API Routes
 @api_router.get("/")
 async def root():
-    return {"message": "Plant Care Assistant API - Ready to help with your plants!"}
+    return {"message": "Plauntie API - Your wise plant companion is ready to help!"}
 
 @api_router.get("/plants/search", response_model=List[PlantSearchResult])
 async def search_plants(q: str):
