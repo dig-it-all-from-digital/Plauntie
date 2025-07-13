@@ -159,21 +159,28 @@ class PlantAPIService:
                 if response.status == 200:
                     data = await response.json()
                     
+                    # Check if data is valid
+                    if not data or 'error' in data:
+                        logging.error(f"Invalid data from Perenual API: {data}")
+                        return None
+                    
                     care_info = PlantCareInfo(
                         plant_id=plant_id,
-                        name=data.get('common_name', ''),
-                        scientific_name=data.get('scientific_name', [''])[0] if data.get('scientific_name') else '',
-                        watering=data.get('watering', ''),
-                        sunlight=data.get('sunlight', [''])[0] if data.get('sunlight') else '',
-                        temperature=f"{data.get('hardiness', {}).get('min', '')} - {data.get('hardiness', {}).get('max', '')}°C",
-                        humidity=data.get('humidity', ''),
-                        fertilizer=data.get('fertilizer', ''),
-                        repotting=data.get('repotting', ''),
+                        name=data.get('common_name', 'Unknown'),
+                        scientific_name=data.get('scientific_name', ['Unknown'])[0] if data.get('scientific_name') else 'Unknown',
+                        watering=data.get('watering', 'Информация недоступна'),
+                        sunlight=data.get('sunlight', ['Информация недоступна'])[0] if data.get('sunlight') else 'Информация недоступна',
+                        temperature=f"{data.get('hardiness', {}).get('min', 'N/A')} - {data.get('hardiness', {}).get('max', 'N/A')}°C" if data.get('hardiness') else 'Информация недоступна',
+                        humidity=data.get('humidity', 'Информация недоступна'),
+                        fertilizer=data.get('fertilizer', 'Информация недоступна'),
+                        repotting=data.get('repotting', 'Информация недоступна'),
                         common_problems=data.get('problem', []),
                         care_tips=data.get('care_guides', [])
                     )
                     
                     return care_info
+                else:
+                    logging.error(f"Perenual API returned status {response.status}")
         except Exception as e:
             logging.error(f"Error getting care info from Perenual: {e}")
         
