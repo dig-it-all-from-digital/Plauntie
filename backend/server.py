@@ -25,7 +25,7 @@ client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
 # Create the main app without a prefix
-app = FastAPI(title="Plant Care Assistant API")
+app = FastAPI(title="Plauntie - Plant Care Assistant API")
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
