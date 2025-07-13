@@ -168,20 +168,21 @@ function App() {
       setIsDarkTheme(savedTheme === 'dark');
     }
     
-    // Load language preference
+    // Load language preference  
     const savedLanguage = localStorage.getItem('plauntie-language');
-    if (savedLanguage) {
+    if (savedLanguage && (savedLanguage === 'ru' || savedLanguage === 'en')) {
       setLanguage(savedLanguage);
     }
   }, []);
 
   useEffect(() => {
-    // Apply theme to body
+    // Apply theme to body and save to localStorage
     document.body.className = isDarkTheme ? 'dark-theme' : 'light-theme';
     localStorage.setItem('plauntie-theme', isDarkTheme ? 'dark' : 'light');
   }, [isDarkTheme]);
 
   useEffect(() => {
+    // Save language to localStorage
     localStorage.setItem('plauntie-language', language);
   }, [language]);
 
