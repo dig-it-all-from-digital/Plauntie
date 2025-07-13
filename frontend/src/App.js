@@ -74,6 +74,7 @@ function App() {
     const nickname = prompt(`Дайте прозвище вашему ${plant.name}:`);
     if (!nickname) return;
 
+    setLoading(true);
     try {
       const plantData = {
         plant_id: plant.id,
@@ -86,11 +87,22 @@ function App() {
       };
 
       await axios.post(`${API}/user/${USER_ID}/plants`, plantData);
-      await loadUserPlants();
-      await loadReminders();
+      
+      // Immediately refresh data
+      await Promise.all([
+        loadUserPlants(),
+        loadReminders()
+      ]);
+      
       alert('Растение добавлено в вашу коллекцию!');
+      
+      // Switch to collection tab to show the added plant
+      setActiveTab('collection');
     } catch (error) {
       console.error('Error adding plant to collection:', error);
+      alert('Ошибка при добавлении растения. Попробуйте еще раз.');
+    } finally {
+      setLoading(false);
     }
   };
 
