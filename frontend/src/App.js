@@ -107,13 +107,22 @@ function App() {
   };
 
   const completeReminder = async (reminderId) => {
+    setLoading(true);
     try {
       await axios.post(`${API}/user/${USER_ID}/reminders/${reminderId}/complete`);
-      await loadReminders();
-      await loadUserPlants();
+      
+      // Immediately refresh data
+      await Promise.all([
+        loadReminders(),
+        loadUserPlants()
+      ]);
+      
       alert('Напоминание выполнено!');
     } catch (error) {
       console.error('Error completing reminder:', error);
+      alert('Ошибка при выполнении напоминания. Попробуйте еще раз.');
+    } finally {
+      setLoading(false);
     }
   };
 
