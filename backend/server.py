@@ -503,7 +503,7 @@ async def subscribe_for_pushes(subscription: PushSubscription):
     try:
         await db.push_subscriptions.update_one(
             {'endpoint': subscription.endpoint},
-            {'$set': subscription.dict()},
+            {'$set': subscription.model_dump()},
             upsert=True
         )
         return {"message": "Subscription successful."}
