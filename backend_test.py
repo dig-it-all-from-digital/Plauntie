@@ -12,7 +12,7 @@ from datetime import datetime
 from PIL import Image
 
 class PlantCareAPITester:
-    def __init__(self, base_url="https://c0eec0b5-d7bf-49e6-b38b-78b86e8cfe1b.preview.emergentagent.com"):
+    def __init__(self, base_url="http://127.0.0.1:8000"):
         self.base_url = base_url
         self.api_url = f"{base_url}/api"
         self.tests_run = 0
@@ -95,10 +95,27 @@ class PlantCareAPITester:
         except Exception as e:
             return self.log_test("Plant Care Info", False, f"Error: {str(e)}")
 
+    def test_chat(self):
+        """Test the chat endpoint"""
+        try:
+            payload = {"message": "Привет! Как дела?", "enable_web_search": False}
+            response = requests.post(f"{self.api_url}/chat", json=payload, timeout=30)
+
+            success = response.status_code == 200 and 'response' in response.json()
+
+            if success:
+                data = response.json()
+                details = f"Plauntie replied: '{data.get('response', '')[:50]}...'"
+            else:
+                details = f"Status: {response.status_code}"
+
+            return self.log_test("Chat Endpoint", success, details)
+        except Exception as e:
+            return self.log_test("Chat Endpoint", False, f"Error: {str(e)}")
+
     def test_plant_identification(self):
         """Test plant identification with a sample image"""
         try:
-            # Create a simple test image
             img = Image.new('RGB', (300, 300), color='green')
             img_buffer = io.BytesIO()
             img.save(img_buffer, format='JPEG')
@@ -106,28 +123,58 @@ class PlantCareAPITester:
             
             files = {'file': ('test_plant.jpg', img_buffer, 'image/jpeg')}
             response = requests.post(f"{self.api_url}/plants/identify", 
-                                   files=files, timeout=20)
+                                   files=files, timeout=30) # Increased timeout for LLM
             
-            success = response.status_code == 200
+            success = response.status_code == 200 and 'plauntie_description' in response.json()
             
             if success:
                 data = response.json()
-                suggestions_count = len(data.get('suggestions', []))
-                confidence = data.get('confidence', 0)
-                details = f"Suggestions: {suggestions_count} | Confidence: {confidence:.2f}"
+                details = f"Plauntie says: '{data.get('plauntie_description', '')[:50]}...'"
             else:
                 details = f"Status: {response.status_code}"
-                if response.status_code != 200:
+                if response.status_code == 200:
+                    details += " | 'plauntie_description' field missing."
+                else:
                     try:
                         error_data = response.json()
                         details += f" | Error: {error_data.get('detail', 'Unknown error')}"
                     except:
                         details += f" | Response: {response.text[:100]}"
             
-            return self.log_test("Plant Identification", success, details)
+            return self.log_test("Plant Identification (LLM Enhanced)", success, details)
+
+        except Exception as e:
+            return self.log_test("Plant Identification (LLM Enhanced)", False, f"Error: {str(e)}")
+
+    def test_plant_diagnosis(self):
+        """Test plant diagnosis with a sample image"""
+        try:
+            # Create a simple test image (e.g., with a brown spot)
+            img = Image.new('RGB', (300, 300), color='green')
+            for x in range(100, 150):
+                for y in range(100, 150):
+                    img.putpixel((x, y), (139, 69, 19)) # Brown color
+
+            img_buffer = io.BytesIO()
+            img.save(img_buffer, format='JPEG')
+            img_buffer.seek(0)
+
+            files = {'file': ('sick_plant.jpg', img_buffer, 'image/jpeg')}
+            response = requests.post(f"{self.api_url}/plants/diagnose",
+                                   files=files, timeout=30)
+
+            success = response.status_code == 200 and 'diagnosis_text' in response.json()
+
+            if success:
+                data = response.json()
+                details = f"Diagnosis: '{data.get('diagnosis_text', '')[:50]}...'"
+            else:
+                details = f"Status: {response.status_code}"
+
+            return self.log_test("Plant Diagnosis", success, details)
             
         except Exception as e:
-            return self.log_test("Plant Identification", False, f"Error: {str(e)}")
+            return self.log_test("Plant Diagnosis", False, f"Error: {str(e)}")
 
     def test_add_user_plant(self):
         """Test adding a plant to user collection"""
@@ -259,28 +306,22 @@ class PlantCareAPITester:
         print("🌿 Starting PlantCare Assistant Backend API Tests")
         print("=" * 60)
         
-        # Test basic connectivity
         self.test_api_root()
         
-        # Test plant search and care info
+        # Test new AI features
+        self.test_chat()
+        self.test_plant_identification()
+        self.test_plant_diagnosis()
+
+        # Test existing features
         self.test_plant_search()
         self.test_plant_care_info()
-        
-        # Test plant identification
-        self.test_plant_identification()
-        
-        # Test user collection management
         self.test_add_user_plant()
         self.test_get_user_plants()
-        
-        # Test reminders system
         self.test_get_user_reminders()
         self.test_complete_reminder()
-        
-        # Test error handling
         self.test_invalid_endpoints()
         
-        # Print summary
         print("\n" + "=" * 60)
         print(f"📊 Test Summary: {self.tests_passed}/{self.tests_run} tests passed")
         

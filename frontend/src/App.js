@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import ReactMarkdown from 'react-markdown';
 import "./App.css";
 import axios from "axios";
 
@@ -19,6 +20,17 @@ const translations = {
     identifyPlant: "📸 Определить растение",
     myCollection: "🏡 Моя коллекция",
     remindersTab: "⏰ Напоминания",
+    chatWithPlauntie: "💬 Чат с Plauntie",
+    chatPlaceholder: "Спросите Plauntie о чем угодно...",
+    sendButton: "Отправить",
+    enableWebSearch: "Искать в интернете",
+    plauntieIsTyping: "Plauntie печатает...",
+    diagnoseHealth: "🩺 Диагностика здоровья",
+    diagnoseButton: "Диагностировать",
+    diagnosePlaceholder: "Загрузите фото больного растения",
+    diagnoseResults: "Результаты диагностики",
+    installPlauntie: "Установить Plauntie",
+    installPrompt: "Получайте напоминания и советы прямо на главный экран!",
     searchPlaceholder: "Введите название растения...",
     searchButton: "Найти",
     searching: "Поиск...",
@@ -84,6 +96,17 @@ const translations = {
     identifyPlant: "📸 Identify Plant",
     myCollection: "🏡 My Collection",
     remindersTab: "⏰ Reminders",
+    chatWithPlauntie: "💬 Chat with Plauntie",
+    chatPlaceholder: "Ask Plauntie anything...",
+    sendButton: "Send",
+    enableWebSearch: "Search the web",
+    plauntieIsTyping: "Plauntie is typing...",
+    diagnoseHealth: "🩺 Diagnose Health",
+    diagnoseButton: "Diagnose",
+    diagnosePlaceholder: "Upload a photo of the sick plant",
+    diagnoseResults: "Diagnosis Results",
+    installPlauntie: "Install Plauntie",
+    installPrompt: "Get reminders and tips right on your home screen!",
     searchPlaceholder: "Enter plant name...",
     searchButton: "Search",
     searching: "Searching...",
@@ -142,6 +165,21 @@ const translations = {
   }
 };
 
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding)
+    .replace(/-/g, '+')
+    .replace(/_/g, '/');
+
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState('search');
   const [searchQuery, setSearchQuery] = useState('');
@@ -156,9 +194,38 @@ function App() {
   const [language, setLanguage] = useState('ru');
   const [isDarkTheme, setIsDarkTheme] = useState(true);
 
+  // New state for Chat
+  const [chatMessages, setChatMessages] = useState([
+    { sender: 'plauntie', text: 'Здравствуйте, мой хороший! Чем могу помочь вашим зеленым друзьям сегодня?' }
+  ]);
+  const [chatInput, setChatInput] = useState('');
+  const [isWebSearchEnabled, setIsWebSearchEnabled] = useState(false);
+  const [isPlauntieTyping, setIsPlauntieTyping] = useState(false);
+  const [identifyMode, setIdentifyMode] = useState('identify'); // 'identify' or 'diagnose'
+  const [diagnosisResult, setDiagnosisResult] = useState(null);
+  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [installPromptEvent, setInstallPromptEvent] = useState(null);
+
   const t = translations[language];
 
   useEffect(() => {
+    // Check for existing subscription on load
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.ready.then(reg => {
+        reg.pushManager.getSubscription().then(sub => {
+          if (sub) {
+            setIsSubscribed(true);
+          }
+        });
+      });
+    }
+
+    const handleInstallPrompt = (e) => {
+      e.preventDefault();
+      setInstallPromptEvent(e);
+    };
+    window.addEventListener('beforeinstallprompt', handleInstallPrompt);
+
     loadUserPlants();
     loadReminders();
     
@@ -173,6 +240,10 @@ function App() {
     if (savedLanguage && (savedLanguage === 'ru' || savedLanguage === 'en')) {
       setLanguage(savedLanguage);
     }
+
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleInstallPrompt);
+    };
   }, []);
 
   useEffect(() => {
@@ -283,24 +354,61 @@ function App() {
     }
   };
 
-  const identifyPlant = async () => {
+  const handleImageUpload = async () => {
     if (!identificationFile) return;
 
     setLoading(true);
     const formData = new FormData();
     formData.append('file', identificationFile);
 
+    if (identifyMode === 'identify') {
+      try {
+        const response = await axios.post(`${API}/plants/identify`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        setIdentificationResult(response.data);
+      } catch (error) {
+        console.error('Error identifying plant:', error);
+        setIdentificationResult({ plauntie_description: t.identificationFailed });
+      }
+    } else { // diagnose mode
+      try {
+        const response = await axios.post(`${API}/plants/diagnose`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        });
+        setDiagnosisResult(response.data);
+      } catch (error) {
+        console.error('Error diagnosing plant:', error);
+        setDiagnosisResult({ diagnosis_text: t.identificationFailed });
+      }
+    }
+
+    setLoading(false);
+  };
+
+  const handleSendMessage = async () => {
+    if (!chatInput.trim()) return;
+
+    const newUserMessage = { sender: 'user', text: chatInput };
+    setChatMessages(prev => [...prev, newUserMessage]);
+    const currentInput = chatInput;
+    setChatInput('');
+    setIsPlauntieTyping(true);
+
     try {
-      const response = await axios.post(`${API}/plants/identify`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
+      const response = await axios.post(`${API}/chat`, {
+        message: currentInput,
+        enable_web_search: isWebSearchEnabled,
       });
-      setIdentificationResult(response.data);
+
+      const plauntieResponse = { sender: 'plauntie', text: response.data.response };
+      setChatMessages(prev => [...prev, plauntieResponse]);
     } catch (error) {
-      console.error('Error identifying plant:', error);
+      console.error('Error sending message:', error);
+      const errorResponse = { sender: 'plauntie', text: t.addError }; // Re-using a generic error string
+      setChatMessages(prev => [...prev, errorResponse]);
     } finally {
-      setLoading(false);
+      setIsPlauntieTyping(false);
     }
   };
 
@@ -335,25 +443,80 @@ function App() {
     return t.careLevel[level] || level;
   };
 
+  const handleInstallClick = async () => {
+    if (!installPromptEvent) {
+      return;
+    }
+    installPromptEvent.prompt();
+    const { outcome } = await installPromptEvent.userChoice;
+    if (outcome === 'accepted') {
+      console.log('User accepted the install prompt');
+    } else {
+      console.log('User dismissed the install prompt');
+    }
+    setInstallPromptEvent(null);
+  };
+
+  const subscribeUserToPush = async () => {
+    if (!('serviceWorker' in navigator)) {
+      alert("Push notifications are not supported by your browser.");
+      return;
+    }
+
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        alert("You have disabled push notifications.");
+        return;
+      }
+
+      const reg = await navigator.serviceWorker.ready;
+      let sub = await reg.pushManager.getSubscription();
+
+      if (sub) {
+        alert("You are already subscribed to notifications.");
+        return;
+      }
+
+      const response = await axios.get(`${API}/vapid-public-key`);
+      const vapidPublicKey = response.data.public_key;
+      const convertedVapidKey = urlBase64ToUint8Array(vapidPublicKey);
+
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: convertedVapidKey,
+      });
+
+      await axios.post(`${API}/subscribe`, { ...sub.toJSON(), user_id: USER_ID });
+
+      setIsSubscribed(true);
+      alert("You have successfully subscribed to notifications!");
+
+    } catch (error) {
+      console.error('Error subscribing to push notifications:', error);
+      alert("Failed to subscribe to notifications.");
+    }
+  };
+
   return (
     <div className={`min-h-screen transition-all duration-300 ${isDarkTheme ? 'bg-gradient-to-br from-gray-900 via-green-900 to-gray-800' : 'bg-gradient-to-br from-green-50 to-emerald-100'}`}>
       {/* Header */}
       <header className={`shadow-lg border-b-4 transition-all duration-300 ${isDarkTheme ? 'bg-gray-800 border-green-600' : 'bg-white border-green-500'}`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-6">
+          <div className="flex flex-wrap justify-between items-center py-4 md:py-6 gap-4">
             <div className="flex items-center">
               <div className="text-4xl mr-3">🌿</div>
               <div>
-                <h1 className={`text-3xl font-bold transition-colors duration-300 ${isDarkTheme ? 'text-green-400' : 'text-gray-900'}`}>
+                <h1 className={`text-2xl md:text-3xl font-bold transition-colors duration-300 ${isDarkTheme ? 'text-green-400' : 'text-gray-900'}`}>
                   {t.appName}
                 </h1>
-                <p className={`transition-colors duration-300 ${isDarkTheme ? 'text-gray-300' : 'text-gray-600'}`}>
+                <p className={`text-sm transition-colors duration-300 ${isDarkTheme ? 'text-gray-300' : 'text-gray-600'}`}>
                   {t.appSubtitle}
                 </p>
               </div>
             </div>
-            <div className="flex items-center space-x-4">
-              <div className={`text-sm transition-colors duration-300 ${isDarkTheme ? 'text-gray-300' : 'text-gray-500'}`}>
+            <div className="flex items-center space-x-2 md:space-x-4">
+              <div className={`text-xs md:text-sm transition-colors duration-300 ${isDarkTheme ? 'text-gray-300' : 'text-gray-500'}`}>
                 {t.plantsInCollection}: <span className={`font-bold ${isDarkTheme ? 'text-green-400' : 'text-green-600'}`}>{userPlants.length}</span>
               </div>
               <div className={`text-sm transition-colors duration-300 ${isDarkTheme ? 'text-gray-300' : 'text-gray-500'}`}>
@@ -379,6 +542,17 @@ function App() {
               >
                 {isDarkTheme ? t.lightTheme : t.darkTheme}
               </button>
+              <button
+                onClick={subscribeUserToPush}
+                disabled={isSubscribed}
+                className={`px-3 py-1 rounded-lg text-sm font-medium transition-all duration-300 disabled:opacity-50 ${
+                  isSubscribed
+                    ? (isDarkTheme ? 'bg-gray-600 text-gray-400' : 'bg-gray-200 text-gray-400')
+                    : (isDarkTheme ? 'bg-blue-600 text-white hover:bg-blue-500' : 'bg-blue-600 text-white hover:bg-blue-700')
+                }`}
+              >
+                {isSubscribed ? '✅ Subscribed' : '🔔 Subscribe'}
+              </button>
             </div>
           </div>
         </div>
@@ -386,18 +560,19 @@ function App() {
 
       {/* Navigation */}
       <nav className={`shadow-sm transition-all duration-300 ${isDarkTheme ? 'bg-gray-800' : 'bg-white'}`}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex space-x-8">
+        <div className="max-w-7xl mx-auto px-2 sm:px-6 lg:px-8">
+          <div className="flex space-x-4 md:space-x-8 overflow-x-auto whitespace-nowrap">
             {[
               { id: 'search', label: t.searchPlants },
               { id: 'identify', label: t.identifyPlant },
+              { id: 'chat', label: t.chatWithPlauntie },
               { id: 'collection', label: t.myCollection },
               { id: 'reminders', label: t.remindersTab }
             ].map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`py-4 px-6 border-b-2 font-medium text-sm transition-all duration-300 ${
+                className={`py-4 px-3 md:px-6 border-b-2 font-medium text-sm transition-all duration-300 ${
                   activeTab === tab.id
                     ? `${isDarkTheme ? 'border-green-400 text-green-400' : 'border-green-500 text-green-600'}`
                     : `border-transparent ${isDarkTheme ? 'text-gray-400 hover:text-gray-200 hover:border-gray-600' : 'text-gray-500 hover:text-gray-700 hover:border-gray-300'}`
@@ -411,7 +586,83 @@ function App() {
       </nav>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Chat Tab */}
+        {activeTab === 'chat' && (
+          <div className={`rounded-xl shadow-lg transition-all duration-300 ${isDarkTheme ? 'bg-gray-800' : 'bg-white'}`}>
+            <div className="p-6">
+              <h2 className={`text-2xl font-bold mb-4 transition-colors duration-300 ${isDarkTheme ? 'text-green-400' : 'text-gray-900'}`}>
+                {t.chatWithPlauntie}
+              </h2>
+            </div>
+            <div className="h-[60vh] overflow-y-auto p-6 space-y-4">
+              {chatMessages.map((msg, index) => (
+                <div key={index} className={`flex items-end gap-3 ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  {msg.sender === 'plauntie' && <div className="text-3xl">🌿</div>}
+                  <div className={`prose prose-sm max-w-lg px-4 py-3 rounded-2xl transition-colors duration-300 ${
+                    msg.sender === 'user'
+                      ? `rounded-br-none ${isDarkTheme ? 'bg-green-600 text-white prose-invert' : 'bg-green-500 text-white prose-invert'}`
+                      : `rounded-bl-none ${isDarkTheme ? 'bg-gray-700 text-gray-200 prose-invert' : 'bg-gray-200 text-gray-800'}`
+                  }`}>
+                    <ReactMarkdown>{msg.text}</ReactMarkdown>
+                  </div>
+                </div>
+              ))}
+              {isPlauntieTyping && (
+                <div className="flex items-end gap-3 justify-start">
+                  <div className="text-3xl">🌿</div>
+                  <div className={`max-w-lg px-4 py-3 rounded-2xl transition-colors duration-300 rounded-bl-none ${isDarkTheme ? 'bg-gray-700 text-gray-200' : 'bg-gray-200 text-gray-800'}`}>
+                    <div className="flex items-center gap-2">
+                      <span className="typing-dot"></span>
+                      <span className="typing-dot"></span>
+                      <span className="typing-dot"></span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className={`p-6 border-t transition-all duration-300 ${isDarkTheme ? 'border-gray-700' : 'border-gray-200'}`}>
+              <div className="flex items-center gap-4">
+                <input
+                  type="text"
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
+                  placeholder={t.chatPlaceholder}
+                  className={`flex-1 px-4 py-3 border rounded-lg focus:ring-2 focus:border-transparent transition-all duration-300 ${
+                    isDarkTheme
+                      ? 'bg-gray-700 border-gray-600 text-gray-100 placeholder-gray-400 focus:ring-green-400'
+                      : 'border-gray-300 focus:ring-green-500'
+                  }`}
+                />
+                <button
+                  onClick={handleSendMessage}
+                  disabled={isPlauntieTyping}
+                  className={`px-8 py-3 rounded-lg disabled:opacity-50 transition-all duration-300 ${
+                    isDarkTheme
+                      ? 'bg-green-600 text-white hover:bg-green-500'
+                      : 'bg-green-600 text-white hover:bg-green-700'
+                  }`}
+                >
+                  {t.sendButton}
+                </button>
+              </div>
+              <div className="flex items-center mt-4">
+                <input
+                  type="checkbox"
+                  id="web-search-toggle"
+                  checked={isWebSearchEnabled}
+                  onChange={(e) => setIsWebSearchEnabled(e.target.checked)}
+                  className="w-4 h-4 text-green-600 bg-gray-100 border-gray-300 rounded focus:ring-green-500"
+                />
+                <label htmlFor="web-search-toggle" className={`ml-2 text-sm font-medium transition-colors duration-300 ${isDarkTheme ? 'text-gray-300' : 'text-gray-900'}`}>
+                  {t.enableWebSearch}
+                </label>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Search Tab */}
         {activeTab === 'search' && (
           <div className="space-y-6">
@@ -568,9 +819,25 @@ function App() {
         {activeTab === 'identify' && (
           <div className="space-y-6">
             <div className={`rounded-xl shadow-lg p-6 transition-all duration-300 ${isDarkTheme ? 'bg-gray-800' : 'bg-white'}`}>
-              <h2 className={`text-2xl font-bold mb-4 transition-colors duration-300 ${isDarkTheme ? 'text-green-400' : 'text-gray-900'}`}>
-                {t.identifyByPhoto}
-              </h2>
+              <div className="flex justify-between items-center mb-4">
+                <h2 className={`text-2xl font-bold transition-colors duration-300 ${isDarkTheme ? 'text-green-400' : 'text-gray-900'}`}>
+                  {identifyMode === 'identify' ? t.identifyPlant : t.diagnoseHealth}
+                </h2>
+                <div className={`flex border rounded-lg p-1 transition-all ${isDarkTheme ? 'border-gray-600 bg-gray-700' : 'border-gray-200 bg-gray-100'}`}>
+                  <button
+                    onClick={() => setIdentifyMode('identify')}
+                    className={`px-4 py-1 rounded-md text-sm font-medium transition-all ${identifyMode === 'identify' ? 'bg-green-600 text-white shadow' : isDarkTheme ? 'text-gray-300' : 'text-gray-500'}`}
+                  >
+                    {t.identifyPlant}
+                  </button>
+                  <button
+                    onClick={() => setIdentifyMode('diagnose')}
+                    className={`px-4 py-1 rounded-md text-sm font-medium transition-all ${identifyMode === 'diagnose' ? 'bg-green-600 text-white shadow' : isDarkTheme ? 'text-gray-300' : 'text-gray-500'}`}
+                  >
+                    {t.diagnoseHealth}
+                  </button>
+                </div>
+              </div>
               <div className="space-y-4">
                 <div className={`border-2 border-dashed rounded-lg p-8 text-center transition-all duration-300 ${
                   isDarkTheme ? 'border-gray-600 hover:border-green-400' : 'border-gray-300 hover:border-green-500'
@@ -578,11 +845,15 @@ function App() {
                   <input
                     type="file"
                     accept="image/*"
-                    onChange={(e) => setIdentificationFile(e.target.files[0])}
+                    onChange={(e) => {
+                      setIdentificationFile(e.target.files[0]);
+                      setIdentificationResult(null);
+                      setDiagnosisResult(null);
+                    }}
                     className="hidden"
                     id="plant-image"
                   />
-                  <label 
+                  <label
                     htmlFor="plant-image"
                     className="cursor-pointer block"
                   >
@@ -600,7 +871,7 @@ function App() {
                       <div>
                         <div className="text-6xl mb-4">📁</div>
                         <p className={`text-lg font-medium mb-2 transition-colors duration-300 ${isDarkTheme ? 'text-green-400' : 'text-gray-900'}`}>
-                          {t.selectPhoto}
+                          {identifyMode === 'identify' ? t.selectPhoto : t.diagnosePlaceholder}
                         </p>
                         <p className={`transition-colors duration-300 ${isDarkTheme ? 'text-gray-400' : 'text-gray-500'}`}>
                           {t.photoFormats}
@@ -612,7 +883,7 @@ function App() {
                 
                 {identificationFile && (
                   <button
-                    onClick={identifyPlant}
+                    onClick={handleImageUpload}
                     disabled={loading}
                     className={`w-full px-6 py-3 rounded-lg disabled:opacity-50 transition-all duration-300 ${
                       isDarkTheme
@@ -620,50 +891,43 @@ function App() {
                         : 'bg-green-600 text-white hover:bg-green-700'
                     }`}
                   >
-                    {loading ? t.analyzing : t.identifyButton}
+                    {loading ? t.analyzing : (identifyMode === 'identify' ? t.identifyButton : t.diagnoseButton)}
                   </button>
                 )}
               </div>
             </div>
 
             {/* Identification Results */}
-            {identificationResult && (
+            {identificationResult && identifyMode === 'identify' && (
               <div className={`rounded-xl shadow-lg p-6 transition-all duration-300 ${isDarkTheme ? 'bg-gray-800' : 'bg-white'}`}>
                 <h3 className={`text-xl font-bold mb-4 transition-colors duration-300 ${isDarkTheme ? 'text-green-400' : 'text-gray-900'}`}>
                   {t.identificationResults}
                 </h3>
-                {identificationResult.suggestions && identificationResult.suggestions.length > 0 ? (
-                  <div className="space-y-4">
-                    {identificationResult.suggestions.slice(0, 3).map((suggestion, index) => (
-                      <div key={index} className={`border rounded-lg p-4 transition-all duration-300 ${isDarkTheme ? 'border-gray-600 bg-gray-700' : 'border-gray-200'}`}>
-                        <div className="flex justify-between items-start mb-2">
-                          <h4 className={`font-semibold transition-colors duration-300 ${isDarkTheme ? 'text-green-400' : 'text-gray-900'}`}>
-                            {suggestion.name}
-                          </h4>
-                          <span className={`px-2 py-1 rounded text-sm font-medium transition-all duration-300 ${
-                            isDarkTheme ? 'bg-green-800 text-green-200' : 'bg-green-100 text-green-800'
-                          }`}>
-                            {Math.round(suggestion.confidence * 100)}% {t.confidence}
-                          </span>
-                        </div>
-                        {suggestion.common_names && suggestion.common_names.length > 0 && (
-                          <p className={`mb-2 transition-colors duration-300 ${isDarkTheme ? 'text-gray-300' : 'text-gray-600'}`}>
-                            {t.commonNames}: {suggestion.common_names.slice(0, 3).join(', ')}
-                          </p>
-                        )}
-                        {suggestion.family && (
-                          <p className={`text-sm transition-colors duration-300 ${isDarkTheme ? 'text-gray-400' : 'text-gray-500'}`}>
-                            {t.family}: {suggestion.family}
-                          </p>
-                        )}
-                      </div>
-                    ))}
+                {identificationResult.plauntie_description ? (
+                  <div className={`p-4 rounded-lg transition-all duration-300 ${isDarkTheme ? 'bg-gray-700' : 'bg-gray-50'}`}>
+                    <div className={`prose prose-sm max-w-none ${isDarkTheme && 'prose-invert'}`}>
+                      <ReactMarkdown>{identificationResult.plauntie_description}</ReactMarkdown>
+                    </div>
                   </div>
                 ) : (
                   <p className={`transition-colors duration-300 ${isDarkTheme ? 'text-gray-300' : 'text-gray-600'}`}>
                     {t.identificationFailed}
                   </p>
                 )}
+              </div>
+            )}
+
+            {/* Diagnosis Results */}
+            {diagnosisResult && identifyMode === 'diagnose' && (
+              <div className={`rounded-xl shadow-lg p-6 transition-all duration-300 ${isDarkTheme ? 'bg-gray-800' : 'bg-white'}`}>
+                <h3 className={`text-xl font-bold mb-4 transition-colors duration-300 ${isDarkTheme ? 'text-green-400' : 'text-gray-900'}`}>
+                  {t.diagnoseResults}
+                </h3>
+                <div className={`p-4 rounded-lg transition-all duration-300 ${isDarkTheme ? 'bg-gray-700' : 'bg-gray-50'}`}>
+                  <div className={`prose prose-sm max-w-none ${isDarkTheme && 'prose-invert'}`}>
+                    <ReactMarkdown>{diagnosisResult.diagnosis_text}</ReactMarkdown>
+                  </div>
+                </div>
               </div>
             )}
           </div>
@@ -840,6 +1104,23 @@ function App() {
           </div>
         )}
       </main>
+
+      {installPromptEvent && (
+        <div className={`fixed bottom-0 left-0 right-0 p-4 shadow-lg transition-all duration-300 ${isDarkTheme ? 'bg-gray-800 border-t border-green-600' : 'bg-white border-t'}`}>
+          <div className="max-w-7xl mx-auto flex justify-between items-center">
+            <div>
+              <h3 className={`font-bold text-lg ${isDarkTheme ? 'text-green-400' : 'text-gray-900'}`}>{t.installPlauntie}</h3>
+              <p className={`text-sm ${isDarkTheme ? 'text-gray-300' : 'text-gray-600'}`}>{t.installPrompt}</p>
+            </div>
+            <button
+              onClick={handleInstallClick}
+              className={`px-6 py-2 rounded-lg transition-all duration-300 bg-green-600 text-white hover:bg-green-500`}
+            >
+              {t.installPlauntie}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
